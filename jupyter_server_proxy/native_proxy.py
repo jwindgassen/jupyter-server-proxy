@@ -3,28 +3,26 @@ import json
 import logging
 import os
 import re
-
 from datetime import datetime
 from urllib.parse import urlparse
 
-from tornado import ioloop, httpclient
-from tornado.httpserver import HTTPServer
-from tornado.web import Application, RequestHandler, RedirectHandler
-from tornado.log import app_log
-
 from jupyterhub import __version__ as __jh_version__
-from jupyterhub.utils import make_ssl_context, isoformat, exponential_backoff
 from jupyterhub.services.auth import HubOAuthCallbackHandler
+from jupyterhub.utils import exponential_backoff, isoformat, make_ssl_context
+from tornado import httpclient, ioloop
+from tornado.httpserver import HTTPServer
+from tornado.log import app_log
+from tornado.web import Application, RedirectHandler, RequestHandler
 
 from .handlers import SuperviseAndProxyHandler
 
 
 def configure_http_client():
-    keyfile = os.environ.get('JUPYTERHUB_SSL_KEYFILE', '')
-    certfile = os.environ.get('JUPYTERHUB_SSL_CERTFILE', '')
-    client_ca = os.environ.get('JUPYTERHUB_SSL_CLIENT_CA', '')
+    keyfile = os.environ.get("JUPYTERHUB_SSL_KEYFILE", "")
+    certfile = os.environ.get("JUPYTERHUB_SSL_CERTFILE", "")
+    client_ca = os.environ.get("JUPYTERHUB_SSL_CLIENT_CA", "")
 
-    if keyfile == '' and certfile == '' and client_ca == '':
+    if keyfile == "" and certfile == "" and client_ca == "":
         return
 
     ssl_context = make_ssl_context(keyfile, certfile, cafile=client_ca)
@@ -65,7 +63,7 @@ def _make_native_proxy_handler(command, environment, port, mappath):
                 # "presentation_dirname": self.presentation_dirname,
                 "origin_host": self.request.host,  # ToDo!
                 "-": "-",
-                "--": "--"
+                "--": "--",
             }
 
         @property
@@ -112,11 +110,13 @@ def _make_native_proxy_handler(command, environment, port, mappath):
                     for k, v in value.items()
                 }
             else:
-                raise ValueError("Value of unrecognized type {}".format(type(value)))
+                raise ValueError(f"Value of unrecognized type {type(value)}")
 
         def get_env(self):
             if callable(environment):
-                raise Exception("return self._render_template(call_with_asked_args(environment, self.process_args))")
+                raise Exception(
+                    "return self._render_template(call_with_asked_args(environment, self.process_args))"
+                )
             else:
                 return self._render_template(environment)
 
@@ -139,8 +139,17 @@ def patch_default_headers():
 
 
 def make_app(
-    destport, prefix, command, authtype, request_timeout,
-    debug, logs, forward_user_info, query_user_info, progressive, websocket_max_message_size
+    destport,
+    prefix,
+    command,
+    authtype,
+    request_timeout,
+    debug,
+    logs,
+    forward_user_info,
+    query_user_info,
+    progressive,
+    websocket_max_message_size,
 ):
     # ToDo: Presentation_path?
     # presentation_basename = ""
@@ -154,9 +163,7 @@ def make_app(
 
     patch_default_headers()
 
-    proxy_handler = _make_native_proxy_handler(
-        command, {}, destport, {}
-    )
+    proxy_handler = _make_native_proxy_handler(command, {}, destport, {})
 
     options = dict(
         debug=debug,
@@ -169,33 +176,35 @@ def make_app(
         # presentation_path=presentation_path,
         # presentation_basename=presentation_basename,
         # presentation_dirname=presentation_dirname,
-        request_timeout=request_timeout
+        request_timeout=request_timeout,
     )
 
     if websocket_max_message_size:
         options["websocket_max_message_size"] = websocket_max_message_size
 
-    return Application([
-        (
-            r"^" + re.escape(prefix) + r"/oauth_callback",
-            HubOAuthCallbackHandler,
-        ),
-        (
-            r"^" + re.escape(prefix) + r"/(.*)",
-            proxy_handler,
-            dict(
-                state={},
-                # ToDo: authtype=authtype, forward_user_info=forward_user_info, query_user_info=query_user_info, progressive=progressive
-            )
-        ),
-        (
-            r"^" + re.escape(prefix.replace("@", "%40")) + r"/(.*)",
-            RedirectHandler,
-            dict(url=prefix + "/{0}")
-        ),
-    ],
-        **options
+    return Application(
+        [
+            (
+                r"^" + re.escape(prefix) + r"/oauth_callback",
+                HubOAuthCallbackHandler,
+            ),
+            (
+                r"^" + re.escape(prefix) + r"/(.*)",
+                proxy_handler,
+                dict(
+                    state={},
+                    # ToDo: authtype=authtype, forward_user_info=forward_user_info, query_user_info=query_user_info, progressive=progressive
+                ),
+            ),
+            (
+                r"^" + re.escape(prefix.replace("@", "%40")) + r"/(.*)",
+                RedirectHandler,
+                dict(url=prefix + "/{0}"),
+            ),
+        ],
+        **options,
     )
+
 
 def get_ssl_options():
     ssl_options = {}
@@ -218,12 +227,12 @@ def get_ssl_options():
     else:
         # SSL may be missing, so only import it if it"s to be used
         import ssl
+
         # PROTOCOL_TLS selects the highest ssl/tls protocol version that both the client and
         # server support. When PROTOCOL_TLS is not available use PROTOCOL_SSLv23.
         # PROTOCOL_TLS is new in version 2.7.13, 3.5.3 and 3.6
         ssl_options.setdefault(
-            "ssl_version",
-            getattr(ssl, "PROTOCOL_TLS", ssl.PROTOCOL_SSLv23)
+            "ssl_version", getattr(ssl, "PROTOCOL_TLS", ssl.PROTOCOL_SSLv23)
         )
         if ssl_options.get("ca_certs", False):
             ssl_options.setdefault("cert_reqs", ssl.CERT_REQUIRED)
@@ -247,13 +256,17 @@ def get_port_from_env():
 def start_keep_alive(last_activity_interval, force_alive, settings):
     client = httpclient.AsyncHTTPClient()
 
-    hub_activity_url = os.environ.get('JUPYTERHUB_ACTIVITY_URL', '')
-    server_name = os.environ.get('JUPYTERHUB_SERVER_NAME', '')
-    api_token = os.environ.get('JUPYTERHUB_API_TOKEN', '')
+    hub_activity_url = os.environ.get("JUPYTERHUB_ACTIVITY_URL", "")
+    server_name = os.environ.get("JUPYTERHUB_SERVER_NAME", "")
+    api_token = os.environ.get("JUPYTERHUB_API_TOKEN", "")
 
-    if api_token == '' or server_name == '' or hub_activity_url == '':
-        print("The following env vars are required to report activity back to the hub for keep alive: "
-                "JUPYTERHUB_ACTIVITY_URL ({}), JUPYTERHUB_SERVER_NAME({})".format(hub_activity_url, server_name, api_token))
+    if api_token == "" or server_name == "" or hub_activity_url == "":
+        print(
+            "The following env vars are required to report activity back to the hub for keep alive: "
+            "JUPYTERHUB_ACTIVITY_URL ({}), JUPYTERHUB_SERVER_NAME({})".format(
+                hub_activity_url, server_name, api_token
+            )
+        )
         return
 
     async def send_activity():
@@ -265,35 +278,35 @@ def start_keep_alive(last_activity_interval, force_alive, settings):
             if force_alive:
                 last_activity_timestamp = datetime.utcnow()
             else:
-                last_activity_timestamp = settings.get('api_last_activity', None)
+                last_activity_timestamp = settings.get("api_last_activity", None)
 
             if last_activity_timestamp:
                 last_activity_timestamp = isoformat(last_activity_timestamp)
                 req = httpclient.HTTPRequest(
                     url=hub_activity_url,
-                    method='POST',
+                    method="POST",
                     headers={
-                        "Authorization": "token {}".format(api_token),
+                        "Authorization": f"token {api_token}",
                         "Content-Type": "application/json",
                     },
                     body=json.dumps(
                         {
-                            'servers': {
-                                server_name: {'last_activity': last_activity_timestamp}
+                            "servers": {
+                                server_name: {"last_activity": last_activity_timestamp}
                             },
-                            'last_activity': last_activity_timestamp,
+                            "last_activity": last_activity_timestamp,
                         }
                     ),
                 )
                 try:
                     await client.fetch(req)
                 except Exception as e:
-                    print("Error notifying Hub of activity: {}".format(e))
+                    print(f"Error notifying Hub of activity: {e}")
                     return False
                 else:
                     return True
 
-            return True # Nothing to report, so really it worked
+            return True  # Nothing to report, so really it worked
 
         await exponential_backoff(
             notify,
@@ -303,16 +316,25 @@ def start_keep_alive(last_activity_interval, force_alive, settings):
             timeout=60,
         )
 
-
     pc = ioloop.PeriodicCallback(send_activity, 1e3 * last_activity_interval, 0.1)
     pc.start()
 
 
 def run(
     command: list[str],
-    port=None, destport=0, ip="localhost", debug=False, logs=True, authtype="oauth",
-    request_timeout=300, last_activity_interval=300, force_alive=True,
-    forward_user_info=False, query_user_info=False, progressive=False, websocket_max_message_size=0
+    port=None,
+    destport=0,
+    ip="localhost",
+    debug=False,
+    logs=True,
+    authtype="oauth",
+    request_timeout=300,
+    last_activity_interval=300,
+    force_alive=True,
+    forward_user_info=False,
+    query_user_info=False,
+    progressive=False,
+    websocket_max_message_size=0,
 ):
     if port is None:
         get_port_from_env()
@@ -330,8 +352,17 @@ def run(
     configure_http_client()
 
     app = make_app(
-        destport, prefix, list(command), authtype, request_timeout,
-        debug, logs, forward_user_info, query_user_info, progressive, websocket_max_message_size
+        destport,
+        prefix,
+        list(command),
+        authtype,
+        request_timeout,
+        debug,
+        logs,
+        forward_user_info,
+        query_user_info,
+        progressive,
+        websocket_max_message_size,
     )
 
     ssl_options = get_ssl_options()
@@ -340,10 +371,12 @@ def run(
 
     http_server.listen(port or get_port_from_env(), ip)
 
-    print("Starting jhsingle-native-proxy server on address {} port {}, proxying to port {}".format(ip, port, destport))
-    print("URL Prefix: {}".format(prefix))
-    print("Auth Type: {}".format(authtype))
-    print("Command: {}".format(command))
+    print(
+        f"Starting jhsingle-native-proxy server on address {ip} port {port}, proxying to port {destport}"
+    )
+    print(f"URL Prefix: {prefix}")
+    print(f"Auth Type: {authtype}")
+    print(f"Command: {command}")
 
     if last_activity_interval > 0:
         start_keep_alive(last_activity_interval, force_alive, app.settings)
@@ -359,48 +392,77 @@ def main():
     )
 
     parser.add_argument(
-        "--port", default=None, type=int,
-        help="Port for the proxy server to listen on. Defaults to JupyterHub default."
+        "--port",
+        default=None,
+        type=int,
+        help="Port for the proxy server to listen on. Defaults to JupyterHub default.",
     )
     parser.add_argument(
-        "--destport", default=0, type=int,
-        help="Port for the WebApp should end up running on. Leave at 0 for a random open port."
+        "--destport",
+        default=0,
+        type=int,
+        help="Port for the WebApp should end up running on. Leave at 0 for a random open port.",
     )
     parser.add_argument("--ip", default="localhost", help="Address to listen on.")
-    parser.add_argument("--debug", action="store_true", default=False, help="Display debug level logs.")
-    parser.add_argument("--logs", action="store_true", default=True, help="Display logs generated by the subprocess.")
-    parser.add_argument("--authtype", choices=["oauth", "none"], default="oauth", help="Authentication Metod.")
     parser.add_argument(
-        "--request-timeout", default=300, type=int,
-        help="Timeout for proxied HTTP calls to subprocess in seconds."
+        "--debug", action="store_true", default=False, help="Display debug level logs."
     )
     parser.add_argument(
-        "--last-activity-interval", default=300, type=int,
-        help="Frequency to notify Hub that the WebApp is still running in seconds. 0 for never."
+        "--logs",
+        action="store_true",
+        default=True,
+        help="Display logs generated by the subprocess.",
     )
     parser.add_argument(
-        "--force-alive", action="store_true", default=True,
-        help="Always report, that there has been activity (force keep alive) - only if last-activity-interval > 0."
+        "--authtype",
+        choices=["oauth", "none"],
+        default="oauth",
+        help="Authentication Metod.",
     )
     parser.add_argument(
-        "--forward-user-info", action="store_true", default=False,
-        help="Forward a 'X-CDSDASHBOARDS-JH-USER' HTTP header to process containing JupyterHub user data."
+        "--request-timeout",
+        default=300,
+        type=int,
+        help="Timeout for proxied HTTP calls to subprocess in seconds.",
     )
     parser.add_argument(
-        "--query-user-info", action="store_true", default=False,
-        help="Add a 'CDSDASHBOARDS_JH_USER GET' query arg in HTTP request to process containing JupyterHub user data."
+        "--last-activity-interval",
+        default=300,
+        type=int,
+        help="Frequency to notify Hub that the WebApp is still running in seconds. 0 for never.",
     )
     parser.add_argument(
-        "--progressive", action="store_true", default=False,
-        help="Progressively flush responses as they arrive (good for Voila)."
+        "--force-alive",
+        action="store_true",
+        default=True,
+        help="Always report, that there has been activity (force keep alive) - only if last-activity-interval > 0.",
     )
     parser.add_argument(
-        "--websocket-max-message-size", default=0, type=int,
-        help="Max size of websocket data (leave at 0 for library defaults)."
+        "--forward-user-info",
+        action="store_true",
+        default=False,
+        help="Forward a 'X-CDSDASHBOARDS-JH-USER' HTTP header to process containing JupyterHub user data.",
     )
     parser.add_argument(
-        "command", nargs="+",
-        help="The command executed for starting the WebApp"
+        "--query-user-info",
+        action="store_true",
+        default=False,
+        help="Add a 'CDSDASHBOARDS_JH_USER GET' query arg in HTTP request to process containing JupyterHub user data.",
+    )
+    parser.add_argument(
+        "--progressive",
+        action="store_true",
+        default=False,
+        help="Progressively flush responses as they arrive (good for Voila).",
+    )
+    parser.add_argument(
+        "--websocket-max-message-size",
+        default=0,
+        type=int,
+        help="Max size of websocket data (leave at 0 for library defaults).",
+    )
+    parser.add_argument(
+        "command", nargs="+", help="The command executed for starting the WebApp"
     )
 
     args = parser.parse_args()
