@@ -53,20 +53,21 @@ class StandaloneHubProxyHandler(StandaloneProxyHandler, HubOAuthenticated):
     Standalone Proxy used when spawned by a JupyterHub.
     Will restrict access to the application by authentication with the JupyterHub API.
     """
+
     @property
     def hub_users(self):
-        return {self.settings['user']}
+        return {self.settings["user"]}
 
     @property
     def hub_groups(self):
-        if self.settings['group']:
-            return {self.settings['group']}
+        if self.settings["group"]:
+            return {self.settings["group"]}
         return set()
 
     @property
     def allow_all(self):
-        if 'anyone' in self.settings:
-            return self.settings['anyone'] == '1'
+        if "anyone" in self.settings:
+            return self.settings["anyone"] == "1"
         return super().allow_all
 
     def prepare(self, *args, **kwargs):
@@ -87,7 +88,11 @@ def _make_native_proxy_handler(
     # Try to determine if we are launched by a JupyterHub via environment variables.
     # See jupyterhub/spawner.py#L1035
     if overwrite_authentication is not None:
-        base = StandaloneHubProxyHandler if overwrite_authentication is True else StandaloneProxyHandler
+        base = (
+            StandaloneHubProxyHandler
+            if overwrite_authentication is True
+            else StandaloneProxyHandler
+        )
     elif "JUPYTERHUB_API_TOKEN" in os.environ and "JUPYTERHUB_API_URL" in os.environ:
         base = StandaloneHubProxyHandler
     else:
