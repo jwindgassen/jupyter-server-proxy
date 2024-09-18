@@ -70,9 +70,10 @@ def make_proxy_app(
 
     settings = dict(
         debug=debug,
-        # Required for JupyterHub Authentication
+        # Required for JupyterHub
         hub_user=os.environ.get("JUPYTERHUB_USER", ""),
         hub_group=os.environ.get("JUPYTERHUB_GROUP", ""),
+        cookie_secret=os.urandom(32),
     )
 
     if websocket_max_message_size:
