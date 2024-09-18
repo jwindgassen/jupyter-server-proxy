@@ -62,9 +62,6 @@ acceptance = [
     "jupyter-server-proxy[test]",
     "robotframework-jupyterlibrary >=0.4.2",
 ]
-standalone = [
-    "jupyterhub"
-]
 classic = [
     "jupyter-server <2",
     "jupyterlab >=3.0.0,<4.0.0a0",
@@ -75,6 +72,9 @@ lab = [
     "jupyterlab >=4.0.5,<5.0.0a0",
     "nbclassic",
     "notebook >=7",
+]
+hub = [
+    "jupyterhub"
 ]
 
 [project.urls]
