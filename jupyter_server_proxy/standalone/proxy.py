@@ -39,14 +39,17 @@ class StandaloneProxyHandler(SuperviseAndProxyHandler):
 
 
 def make_proxy_app(
-    destport,
-    prefix,
-    command,
-    use_jupyterhub,
-    timeout,
-    debug,
-    # progressive,
-    websocket_max_message_size,
+    command: list[str],
+    prefix: str,
+    port: int,
+    unix_socket: bool | str,
+    environment: dict[str, str],
+    mappath: dict[str, str],
+    timeout: int,
+    use_jupyterhub: bool,
+    debug: bool,
+    # progressive: bool,
+    websocket_max_message_size: int,
 ):
     # Determine base class, whether or not to authenticate with JupyterHub
     if use_jupyterhub:
@@ -56,16 +59,21 @@ def make_proxy_app(
     else:
         proxy_base = StandaloneProxyHandler
 
-    # ToDo: environment & mappath
+    app_log.debug(f"Process will use {port = }")
+    app_log.debug(f"Process will use {unix_socket = }")
+    app_log.debug(f"Process environment: {environment}")
+    app_log.debug(f"Proxy mappath: {mappath}")
+
     class Proxy(proxy_base):
         def __init__(self, *args, **kwargs):
             super().__init__(*args, **kwargs)
-            self.name = command[0]
+            self.name = f"{command[0]!r} Process"
             self.proxy_base = command[0]
-            self.requested_port = destport
-            self.mappath = {}
+            self.requested_port = port
+            self.requested_unix_socket = unix_socket
+            self.mappath = mappath
             self.command = command
-            self.environment = {}
+            self.environment = environment
             self.timeout = timeout
 
     settings = dict(
@@ -77,6 +85,7 @@ def make_proxy_app(
     )
 
     if websocket_max_message_size:
+        app_log.debug(f"Restricting WebSocket Messages to {websocket_max_message_size}")
         settings["websocket_max_message_size"] = websocket_max_message_size
 
     app = Application(

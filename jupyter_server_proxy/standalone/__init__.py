@@ -23,24 +23,29 @@ def _use_jupyterhub(overwrite):
 
 
 def run(
-    command,
-    port,
-    destport,
-    ip,
-    debug,
-    # logs,
-    overwrite_authentication,
-    timeout,
-    activity_interval,
-    # progressive,
-    websocket_max_message_size,
+    command: list[str],
+    port: int,
+    address: str,
+    server_port: int,
+    socket_path: str | None,
+    socket_auto: bool,
+    environment: list[tuple[str, str]] | None,
+    mappath: list[tuple[str, str]] | None,
+    debug: bool,
+    # logs: bool,
+    overwrite_authentication: bool | None,
+    timeout: int,
+    activity_interval: int,
+    # progressive: bool,
+    websocket_max_message_size: int,
 ):
-    if port is None:
-        port = get_port_from_env()
-
+    # Setup Logging
     enable_pretty_logging(logger=log)
     if debug:
         log.setLevel(logging.DEBUG)
+
+    if not port:
+        port = get_port_from_env()
 
     use_jupyterhub = _use_jupyterhub(overwrite_authentication)
     if use_jupyterhub:
@@ -49,11 +54,14 @@ def run(
     prefix = os.environ.get("JUPYTERHUB_SERVICE_PREFIX", "/")
 
     app = make_proxy_app(
-        destport,
+        command,
         prefix.removesuffix("/"),
-        list(command),
-        use_jupyterhub,
+        server_port,
+        socket_path or socket_auto,
+        dict(environment),
+        dict(mappath),
         timeout,
+        use_jupyterhub,
         debug,
         # progressive,
         websocket_max_message_size,
@@ -66,11 +74,11 @@ def run(
         ssl_options = configure_ssl()
 
     http_server = HTTPServer(app, ssl_options=ssl_options, xheaders=True)
-    http_server.listen(port, ip)
+    http_server.listen(port, address)
 
-    log.info(f"Starting standaloneproxy on {ip}:{port}")
+    log.info(f"Starting standaloneproxy on '{address}:{port}'")
     log.info(f"URL Prefix: {prefix!r}")
-    log.info(f"Command: {command}")
+    log.info(f"Command: {' '.join(command)!r}")
 
     # Periodically send JupyterHub Notifications, that we are still running
     if use_jupyterhub and activity_interval > 0:
@@ -84,26 +92,70 @@ def run(
 
 def main():
     parser = argparse.ArgumentParser(
-        "jupyter-native-proxy",
-        description="Wrap an arbitrary WebApp so it can be used in place of 'singleuser' in a JupyterHub setting",
+        "jupyter-standalone-proxy",
+        description="Wrap an arbitrary WebApp so it can be used in place of 'jupyterhub-singleuser' in a JupyterHub setting.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
 
     parser.add_argument(
+        "-p",
         "--port",
-        default=None,
-        type=int,
-        help="Port for the proxy server to listen on. Defaults to JupyterHub default.",
-    )
-    parser.add_argument(
-        "--destport",
         default=0,
         type=int,
-        help="Port for the WebApp should end up running on. Leave at 0 for a random open port.",
+        dest="port",
+        help="Port for the proxy server to listen on (0 for JupyterHub default).",
     )
-    parser.add_argument("--ip", default="localhost", help="Address to listen on.")
     parser.add_argument(
-        "--debug", action="store_true", default=False, help="Display debug level logs."
+        "-a",
+        "--address",
+        default="localhost",
+        type=str,
+        dest="address",
+        help="Address for the proxy server to listen on.",
+    )
+    parser.add_argument(
+        "-s",
+        "--server-port",
+        default=0,
+        type=int,
+        dest="server_port",
+        help="Port for the WebApp should end up running on (0 for random open port).",
+    )
+    parser.add_argument(
+        "--socket-path",
+        type=str,
+        default=None,
+        help="Path to the Unix Socket to use for proxying. Takes precedence over '-s/--server_port' and '--socket-auto'.",
+    )
+    parser.add_argument(
+        "--socket-auto",
+        action="store_true",
+        help="Use Unix Socket for proxying, but let Jupyter Server Proxy automatically create one.",
+    )
+    parser.add_argument(
+        "--env",
+        "--environment",
+        type=lambda v: tuple(v.split(":")[:2]),
+        default=[],
+        action="append",
+        dest="environment",
+        help="Add an environment variable to the server process. Must be of the form <Name>:<Value>, e.g. --env=MY_VAR:42",
+    )
+    parser.add_argument(
+        "--mappath",
+        type=lambda v: tuple(v.split(":")[:2]),
+        default=[],
+        action="append",
+        help="Add an path mapping to the proxy. Any requests received under <Source> will be redirected to <Target>. "
+        "Must be of the form <Source>:<Target>, e.g. --mappath=/:/index.html",
+    )
+    parser.add_argument(
+        "-d",
+        "--debug",
+        action="store_true",
+        default=False,
+        dest="debug",
+        help="Display debug level logs.",
     )
     # ToDo: Split Server and Application Logger
     # parser.add_argument(
