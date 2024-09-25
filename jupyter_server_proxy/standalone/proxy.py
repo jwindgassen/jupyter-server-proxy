@@ -1,7 +1,6 @@
 import os
 import re
 from logging import Logger
-from urllib.parse import urlparse
 
 from jupyterhub import __version__ as __jh_version__
 from jupyterhub.services.auth import HubOAuthCallbackHandler, HubOAuthenticated
@@ -148,16 +147,3 @@ def make_proxy_app(
     )
 
     return app
-
-
-# https://github.com/jupyterhub/jupyterhub/blob/2.0.0rc3/jupyterhub/singleuser/mixins.py#L340-L349
-def get_port_from_env():
-    if os.environ.get("JUPYTERHUB_SERVICE_URL"):
-        url = urlparse(os.environ["JUPYTERHUB_SERVICE_URL"])
-        if url.port:
-            return url.port
-        elif url.scheme == "http":
-            return 80
-        elif url.scheme == "https":
-            return 443
-    return 8888

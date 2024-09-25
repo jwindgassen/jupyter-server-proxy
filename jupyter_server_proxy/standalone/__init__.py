@@ -1,6 +1,7 @@
 import argparse
 import logging
 import os
+from urllib.parse import urlparse
 
 from tornado import ioloop
 from tornado.httpserver import HTTPServer
@@ -8,13 +9,37 @@ from tornado.log import app_log as log
 from tornado.log import enable_pretty_logging, gen_log
 
 from .activity import start_activity_update
-from .proxy import configure_ssl, make_proxy_app, get_port_from_env
+from .proxy import configure_ssl, make_proxy_app
+
+
+def _default_address_and_port() -> tuple[str, int]:
+    """
+    Get the Address and Port for the Proxy, either from JUPYTERHUB_SERVICE_URL or default values.
+    See https://github.com/jupyterhub/jupyterhub/blob/4.x/jupyterhub/singleuser/mixins.py#L266-L284.
+    """
+    address = "127.0.0.1"
+    port = 8888
+
+    if os.environ.get("JUPYTERHUB_SERVICE_URL"):
+        url = urlparse(os.environ["JUPYTERHUB_SERVICE_URL"])
+
+        if url.hostname:
+            address = url.hostname
+
+        if url.port:
+            port = url.port
+        elif url.scheme == "http":
+            port = 80
+        elif url.scheme == "https":
+            port = 443
+
+    return address, port
 
 
 def run(
     command: list[str],
-    port: int,
-    address: str,
+    port: int | None,
+    address: str | None,
     server_port: int,
     socket_path: str | None,
     socket_auto: bool,
@@ -34,8 +59,9 @@ def run(
         log.setLevel(logging.DEBUG)
         gen_log.setLevel(logging.DEBUG)
 
-    if not port:
-        port = get_port_from_env()
+    address_port_default = _default_address_and_port()
+    address = address or address_port_default[0]
+    port = port or address_port_default[1]
 
     if skip_authentication:
         log.warn("Disabling Authentication with JuypterHub Server!")
@@ -84,18 +110,16 @@ def main():
     parser.add_argument(
         "-p",
         "--port",
-        default=0,
         type=int,
         dest="port",
-        help="Port for the proxy server to listen on (0 for JupyterHub default).",
+        help="Set port for the proxy server to listen on. Will use 'JUPYTERHUB_SERVICE_URL' or '127.0.0.1' by default.",
     )
     parser.add_argument(
         "-a",
         "--address",
-        default="localhost",
         type=str,
         dest="address",
-        help="Address for the proxy server to listen on.",
+        help="Set address for the proxy server to listen on. Will use 'JUPYTERHUB_SERVICE_URL' or '8888' by default.",
     )
     parser.add_argument(
         "-s",
