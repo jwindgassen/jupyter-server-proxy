@@ -3,6 +3,10 @@ import re
 from logging import Logger
 from urllib.parse import urlparse
 
+from jupyterhub import __version__ as __jh_version__
+from jupyterhub.services.auth import HubOAuthCallbackHandler, HubOAuthenticated
+from jupyterhub.utils import make_ssl_context
+from tornado import httpclient, web
 from tornado.log import app_log
 from tornado.web import Application
 from tornado.websocket import WebSocketHandler
@@ -10,22 +14,49 @@ from tornado.websocket import WebSocketHandler
 from ..handlers import SuperviseAndProxyHandler
 
 
-class StandaloneProxyHandler(SuperviseAndProxyHandler):
+class StandaloneHubProxyHandler(HubOAuthenticated, SuperviseAndProxyHandler):
     """
-    Base class for standalone proxies. Will not ensure any authentication!
+    Base class for standalone proxies.
+    Will restrict access to the application by authentication with the JupyterHub API.
     """
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.environment = {}
         self.timeout = 60
+        self.skip_authentication = False
 
     @property
     def log(self) -> Logger:
         return app_log
 
+    @property
+    def hub_users(self):
+        if "hub_user" in self.settings:
+            return {self.settings["hub_user"]}
+        return set()
+
+    @property
+    def hub_groups(self):
+        if "hub_group" in self.settings:
+            return {self.settings["hub_group"]}
+        return set()
+
+    def set_default_headers(self):
+        self.set_header("X-JupyterHub-Version", __jh_version__)
+
     def prepare(self, *args, **kwargs):
         pass
+
+    async def proxy(self, port, path):
+        if self.skip_authentication:
+            return await super().proxy(port, path)
+        else:
+            return await self.oauth_proxy(port, path)
+
+    @web.authenticated
+    async def oauth_proxy(self, port, path):
+        return await super().proxy(port, path)
 
     def check_origin(self, origin: str = None):
         # Skip JupyterHandler.check_origin
@@ -38,6 +69,23 @@ class StandaloneProxyHandler(SuperviseAndProxyHandler):
         return self.timeout
 
 
+def configure_ssl():
+    keyfile = os.environ.get("JUPYTERHUB_SSL_KEYFILE")
+    certfile = os.environ.get("JUPYTERHUB_SSL_CERTFILE")
+    cafile = os.environ.get("JUPYTERHUB_SSL_CLIENT_CA")
+
+    if not (keyfile and certfile and cafile):
+        app_log.warn("Could not configure SSL")
+        return None
+
+    ssl_context = make_ssl_context(keyfile, certfile, cafile)
+
+    # Configure HTTPClient to use SSL for Proxy Requests
+    httpclient.AsyncHTTPClient.configure(None, defaults={"ssl_options": ssl_context})
+
+    return ssl_context
+
+
 def make_proxy_app(
     command: list[str],
     prefix: str,
@@ -46,25 +94,17 @@ def make_proxy_app(
     environment: dict[str, str],
     mappath: dict[str, str],
     timeout: int,
-    use_jupyterhub: bool,
+    skip_authentication: bool,
     debug: bool,
     # progressive: bool,
     websocket_max_message_size: int,
 ):
-    # Determine base class, whether or not to authenticate with JupyterHub
-    if use_jupyterhub:
-        from .hub import StandaloneHubProxyHandler
-
-        proxy_base = StandaloneHubProxyHandler
-    else:
-        proxy_base = StandaloneProxyHandler
-
     app_log.debug(f"Process will use {port = }")
     app_log.debug(f"Process will use {unix_socket = }")
     app_log.debug(f"Process environment: {environment}")
     app_log.debug(f"Proxy mappath: {mappath}")
 
-    class Proxy(proxy_base):
+    class Proxy(StandaloneHubProxyHandler):
         def __init__(self, *args, **kwargs):
             super().__init__(*args, **kwargs)
             self.name = f"{command[0]!r} Process"
@@ -75,6 +115,7 @@ def make_proxy_app(
             self.command = command
             self.environment = environment
             self.timeout = timeout
+            self.skip_authentication = skip_authentication
 
     settings = dict(
         debug=debug,
@@ -97,24 +138,14 @@ def make_proxy_app(
                     state={},
                     # ToDo: progressive=progressive
                 ),
-            )
+            ),
+            (
+                r"^" + re.escape(prefix) + r"/oauth_callback",
+                HubOAuthCallbackHandler,
+            ),
         ],
         **settings,
     )
-
-    if use_jupyterhub:
-        from jupyterhub.services.auth import HubOAuthCallbackHandler
-
-        # The OAuth Callback required to redirect when we successfully authenticated with JupyterHub
-        app.add_handlers(
-            ".*",
-            [
-                (
-                    r"^" + re.escape(prefix) + r"/oauth_callback",
-                    HubOAuthCallbackHandler,
-                ),
-            ],
-        )
 
     return app
 

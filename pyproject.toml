@@ -73,7 +73,7 @@ lab = [
     "nbclassic",
     "notebook >=7",
 ]
-hub = [
+standalone = [
     "jupyterhub"
 ]
 
