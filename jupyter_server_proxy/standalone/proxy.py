@@ -3,10 +3,10 @@ import re
 import ssl
 from logging import Logger
 
+from jupyter_server.utils import ensure_async
 from jupyterhub import __version__ as __jh_version__
 from jupyterhub.services.auth import HubOAuthCallbackHandler, HubOAuthenticated
 from jupyterhub.utils import make_ssl_context
-from jupyter_server.utils import ensure_async
 from tornado import httpclient, web
 from tornado.log import app_log
 from tornado.web import Application, RedirectHandler
@@ -149,13 +149,7 @@ def make_proxy_app(
     app = Application(
         [
             # Redirects from the JupyterHub might not contain a slash
-            (
-                rf"^{escaped_prefix}$",
-                RedirectHandler,
-                dict(
-                    url=rf"^{escaped_prefix}/"
-                )
-            ),
+            (rf"^{escaped_prefix}$", RedirectHandler, dict(url=rf"^{escaped_prefix}/")),
             (
                 rf"^{escaped_prefix}/(.*)",
                 Proxy,
