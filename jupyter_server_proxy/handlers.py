@@ -108,18 +108,21 @@ class ProxyHandler(WebSocketHandlerMixin, JupyterHandler):
     """
 
     unix_socket = None  # Used in subclasses
+    _requested_subprotocols = None
 
-    def __init__(self, *args, **kwargs):
-        self.proxy_base = ""
-        self.absolute_url = kwargs.pop("absolute_url", False)
-        self.host_allowlist = kwargs.pop("host_allowlist", ["localhost", "127.0.0.1"])
-        self.rewrite_response = kwargs.pop(
-            "rewrite_response",
-            tuple(),
-        )
-        self._requested_subprotocols = None
-        self.update_last_activity = kwargs.pop("update_last_activity", True)
-        super().__init__(*args, **kwargs)
+    def initialize(
+        self,
+        proxy_base="",
+        absolute_url=False,
+        host_allowlist=("localhost", "127.0.0.1"),
+        rewrite_response=False,
+        update_last_activity=True,
+    ):
+        self.proxy_base = proxy_base
+        self.absolute_url = absolute_url
+        self.host_allowlist = host_allowlist
+        self.rewrite_response = rewrite_response
+        self.update_last_activity = update_last_activity
 
     # Support/use jupyter_server config arguments allow_origin and allow_origin_pat
     # to enable cross origin requests propagated by e.g. inverting proxies.
@@ -771,8 +774,10 @@ class NamedLocalProxyHandler(LocalProxyHandler):
     subclass below is used for named proxies where we also start the server.
     """
 
-    port = 0
-    mappath = {}
+    def initialize(self, port=0, mappath=None, **kwargs):
+        super().initialize(**kwargs)
+        self.port = port
+        self.mapppath = mappath if mappath is not None else {}
 
     @property
     def process_args(self):
@@ -848,19 +853,24 @@ class SuperviseAndProxyHandler(NamedLocalProxyHandler):
     A subclass of this will be made for each configured server process.
     """
 
-    def __init__(self, *args, **kwargs):
-        self.requested_port = 0
-        self.requested_unix_socket = False
-        self.mappath = {}
-        self.command = list()
-        super().__init__(*args, **kwargs)
+    def initialize(
+        self,
+        name="process",
+        port=0,
+        unix_socket=False,
+        command=None,
+        state=None,
+        **kwargs,
+    ):
+        super().initialize(**kwargs)
+        self.name = name
+        self.requested_port = port
+        self.requested_unix_socket = unix_socket
+        self.command = command
+        self.state = state if state is not None else {}
 
-    def initialize(self, state):
-        self.state = state
-        if "proc_lock" not in state:
-            state["proc_lock"] = Lock()
-
-    name = "process"
+        if "proc_lock" not in self.state:
+            self.state["proc_lock"] = Lock()
 
     @property
     def port(self):
