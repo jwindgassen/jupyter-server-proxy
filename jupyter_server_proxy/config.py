@@ -3,7 +3,6 @@ Traitlets based configuration for jupyter_server_proxy
 """
 
 import sys
-from collections import namedtuple
 from warnings import warn
 
 if sys.version_info < (3, 10):  # pragma: no cover
@@ -12,7 +11,19 @@ else:  # pragma: no cover
     from importlib.metadata import entry_points
 
 from jupyter_server.utils import url_path_join as ujoin
-from traitlets import Unicode, Int, Bool, Dict, List, Tuple, Instance, Enum, Union, default, observe
+from traitlets import (
+    Bool,
+    Dict,
+    Enum,
+    Instance,
+    Int,
+    List,
+    Tuple,
+    Unicode,
+    Union,
+    default,
+    observe,
+)
 from traitlets.config import Configurable
 
 from .handlers import AddSlashHandler, NamedLocalProxyHandler, SuperviseAndProxyHandler
@@ -130,10 +141,7 @@ class ServerProcess(Configurable):
     )
 
     mappath = Union(
-        trait_types=[
-            Dict(key_trait=Unicode(), value_trait=Unicode()),
-            Callable()
-        ],
+        trait_types=[Dict(key_trait=Unicode(), value_trait=Unicode()), Callable()],
         default_value={},
         help="""Map request paths to proxied paths.
             Either a dictionary of request paths to proxied paths,
@@ -301,7 +309,9 @@ def make_handlers(base_url, server_processes):
     return handlers
 
 
-def make_server_process(name, server_process_config, serverproxy_config) -> ServerProcess:
+def make_server_process(
+    name, server_process_config, serverproxy_config
+) -> ServerProcess:
     return ServerProcess(config=server_process_config, name=name)
 
 
