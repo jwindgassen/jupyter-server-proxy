@@ -12,7 +12,7 @@ else:  # pragma: no cover
     from importlib.metadata import entry_points
 
 from jupyter_server.utils import url_path_join as ujoin
-from traitlets import Dict, List, Tuple, Union, default, observe
+from traitlets import Unicode, Int, Bool, Dict, List, Tuple, Instance, Enum, Union, default, observe
 from traitlets.config import Configurable
 
 from .handlers import AddSlashHandler, NamedLocalProxyHandler, SuperviseAndProxyHandler
@@ -25,28 +25,198 @@ except ImportError:
     from .utils import Callable
 
 
-LauncherEntry = namedtuple(
-    "LauncherEntry", ["enabled", "icon_path", "title", "path_info", "category"]
-)
-ServerProcess = namedtuple(
-    "ServerProcess",
-    [
-        "name",
-        "command",
-        "environment",
-        "timeout",
-        "absolute_url",
-        "port",
-        "unix_socket",
-        "mappath",
-        "launcher_entry",
-        "new_browser_tab",
-        "request_headers_override",
-        "rewrite_response",
-        "update_last_activity",
-        "raw_socket_proxy",
-    ],
-)
+class LauncherEntry(Configurable):
+    enabled = Bool(
+        default_value=True,
+        help="""Set to make an entry in the launchers. Set to False to have no explicit entry.""",
+        config=True,
+    )
+
+    icon_path = Unicode(
+        help="""Full path to an svg icon that could be used with a launcher. Currently only used by the JupyterLab launcher""",
+        config=True,
+    )
+
+    title = Unicode(
+        help="""Title to be used for the launcher entry.""",
+        config=True,
+    )
+
+    @default("title")
+    def _title_default(self):
+        return self.parent.name
+
+    path_info = Unicode(
+        help="""The trailing path that is appended to the user's server URL to access the proxied server.
+                By default it is the name of the server followed by a trailing slash."""
+    )
+
+    @default("path_info")
+    def _path_info_default(self):
+        return self.parent.name * "/"
+
+    category = Enum(
+        values=["Notebook", "Console", "Other"],
+        default_value="Notebook",
+        help="""The category for the launcher item. Currently only used by the JupyterLab launcher. 
+            By default it is "Notebook".""",
+        config=True,
+    )
+
+
+class ServerProcess(Configurable):
+    name = Unicode(
+        default_value="process",
+        help="The name of the process started by a Proxy",
+        config=True,
+    )
+
+    command = List(
+        trait=Unicode(),
+        default_value=[],
+        help="""An optional list of strings that should be the full command to be executed.
+            The optional template arguments {{port}}, {{unix_socket}} and {{base_url}}
+            will be substituted with the port or Unix socket path the process should
+            listen on and the base-url of the notebook.
+
+            Could also be a callable. It should return a list.
+
+            If the command is not specified or is an empty list, the server
+            process is assumed to be started ahead of time and already available
+            to be proxied to.""",
+        config=True,
+    )
+
+    environment = Dict(
+        key_trait=Unicode(),
+        value_trait=Unicode(),
+        default_value={},
+        help="""A dictionary of environment variable mappings. As with the command
+            traitlet, {{port}}, {{unix_socket}} and {{base_url}} will be substituted.
+
+            Could also be a callable. It should return a dictionary.""",
+        config=True,
+    )
+
+    timeout = Int(
+        default_value=5,
+        help="""Timeout in seconds for the process to become ready.""",
+        config=True,
+    )
+
+    absolute_url = Bool(
+        default_value=False,
+        help="""Proxy requests default to being rewritten to '/'. If this is True,
+            the absolute URL will be sent to the backend instead.""",
+        config=True,
+    )
+
+    port = Int(
+        default_value=0,
+        help="""Set the port that the service will listen on. Set to 0 select an unused port.""",
+        config=True,
+    )
+
+    unix_socket = Union(
+        trait_types=[Bool(), Unicode()],
+        default_value=None,
+        allow_none=True,
+        help="""If set, the service will listen on a Unix socket instead of a TCP port.
+            Set to True to use a socket in a new temporary folder, or a string
+            path to a socket. This overrides port.
+
+            Proxying websockets over a Unix socket requires Tornado >= 6.3.""",
+        config=True,
+    )
+
+    mappath = Union(
+        trait_types=[
+            Dict(key_trait=Unicode(), value_trait=Unicode()),
+            Callable()
+        ],
+        default_value={},
+        help="""Map request paths to proxied paths.
+            Either a dictionary of request paths to proxied paths,
+            or a callable that takes parameter ``path`` and returns the proxied path.""",
+        config=True,
+    )
+
+    launcher_entry = Instance(
+        klass=LauncherEntry,
+        help="""Configuration for the entry in classic notebook / jupyterlab launchers.""",
+        config=True,
+    )
+
+    new_browser_tab = Bool(
+        default_value=True,
+        help="""Set to make the proxied server interface opened as a new browser tab. Set to False
+            to have it open a new JupyterLab tab. This has no effect in classic notebook.""",
+        config=True,
+    )
+
+    request_headers_override = Dict(
+        key_trait=Unicode(),
+        value_trait=Unicode(),
+        default_value={},
+        help="""A dictionary of additional HTTP headers for the proxy request. As with
+            the command traitlet, {{port}}, {{unix_socket}} and {{base_url}} will be substituted.""",
+        config=True,
+    )
+
+    rewrite_response = List(
+        trait=Callable(),
+        default_value=[],
+        help="""An optional function or list of function to rewrite the response for the given service.
+            Input is a RewritableResponse object which is an argument that MUST be named
+            ``response``. The function should modify one or more of the attributes
+            ``.body``, ``.headers``, ``.code``, or ``.reason`` of the ``response``
+            argument. For example:
+
+                def dog_to_cat(response):
+                    response.headers["I-Like"] = "tacos"
+                    response.body = response.body.replace(b'dog', b'cat')
+
+                c.ServerProxy.servers['my_server']['rewrite_response'] = dog_to_cat
+
+            The ``rewrite_response`` function can also accept several optional
+            positional arguments. Arguments named ``host``, ``port``, and ``path`` will
+            receive values corresponding to the URL ``/proxy/<host>:<port><path>``. In
+            addition, the original Tornado ``HTTPRequest`` and ``HTTPResponse`` objects
+            are available as arguments named ``request`` and ``orig_response``. (These
+            objects should not be modified.)
+
+            A list or tuple of functions can also be specified for chaining multiple
+            rewrites. For example:
+
+                def cats_only(response, path):
+                    if path.startswith("/cat-club"):
+                        response.code = 403
+                        response.body = b"dogs not allowed"
+
+                c.ServerProxy.servers['my_server']['rewrite_response'] = [dog_to_cat, cats_only]
+
+            Note that if the order is reversed to ``[cats_only, dog_to_cat]``, then accessing
+            ``/cat-club`` will produce a "403 Forbidden" response with body "cats not allowed"
+            instead of "dogs not allowed".
+
+            Defaults to the empty tuple ``tuple()``.""",
+        config=True,
+    )
+
+    update_last_activity = Bool(
+        default_value=True,
+        help="""Will cause the proxy to report activity back to jupyter server.""",
+        config=True,
+    )
+
+    raw_socket_proxy = Bool(
+        default_value=False,
+        help="""Proxy websocket requests as a raw TCP (or unix socket) stream.
+            In this mode, only websockets are handled, and messages are sent to the backend,
+            similar to running a websockify layer (https://github.com/novnc/websockify).
+            All other HTTP requests return 405 (and thus this will also bypass rewrite_response).""",
+        config=True,
+    )
 
 
 def _make_proxy_handler(sp: ServerProcess):
@@ -131,163 +301,22 @@ def make_handlers(base_url, server_processes):
     return handlers
 
 
-def make_server_process(name, server_process_config, serverproxy_config):
-    le = server_process_config.get("launcher_entry", {})
-    return ServerProcess(
-        name=name,
-        command=server_process_config.get("command", list()),
-        environment=server_process_config.get("environment", {}),
-        timeout=server_process_config.get("timeout", 5),
-        absolute_url=server_process_config.get("absolute_url", False),
-        port=server_process_config.get("port", 0),
-        unix_socket=server_process_config.get("unix_socket", None),
-        mappath=server_process_config.get("mappath", {}),
-        launcher_entry=LauncherEntry(
-            enabled=le.get("enabled", True),
-            icon_path=le.get("icon_path"),
-            title=le.get("title", name),
-            path_info=le.get("path_info", name + "/"),
-            category=le.get("category", "Notebook"),
-        ),
-        new_browser_tab=server_process_config.get("new_browser_tab", True),
-        request_headers_override=server_process_config.get(
-            "request_headers_override", {}
-        ),
-        rewrite_response=server_process_config.get(
-            "rewrite_response",
-            tuple(),
-        ),
-        update_last_activity=server_process_config.get("update_last_activity", True),
-        raw_socket_proxy=server_process_config.get("raw_socket_proxy", False),
-    )
+def make_server_process(name, server_process_config, serverproxy_config) -> ServerProcess:
+    return ServerProcess(config=server_process_config, name=name)
 
 
 class ServerProxy(Configurable):
     servers = Dict(
-        {},
+        key_trait=Unicode(),
+        value_trait=Instance(klass=ServerProcess),
+        default_value={},
         help="""
         Dictionary of processes to supervise & proxy.
 
         Key should be the name of the process. This is also used by default as
         the URL prefix, and all requests matching this prefix are routed to this process.
 
-        Value should be a dictionary with the following keys:
-          command
-            An optional list of strings that should be the full command to be executed.
-            The optional template arguments {{port}}, {{unix_socket}} and {{base_url}}
-            will be substituted with the port or Unix socket path the process should
-            listen on and the base-url of the notebook.
-
-            Could also be a callable. It should return a list.
-
-            If the command is not specified or is an empty list, the server
-            process is assumed to be started ahead of time and already available
-            to be proxied to.
-
-          environment
-            A dictionary of environment variable mappings. As with the command
-            traitlet, {{port}}, {{unix_socket}} and {{base_url}} will be substituted.
-
-            Could also be a callable. It should return a dictionary.
-
-          timeout
-            Timeout in seconds for the process to become ready, default 5s.
-
-          absolute_url
-            Proxy requests default to being rewritten to '/'. If this is True,
-            the absolute URL will be sent to the backend instead.
-
-          port
-            Set the port that the service will listen on. The default is to automatically select an unused port.
-
-          unix_socket
-            If set, the service will listen on a Unix socket instead of a TCP port.
-            Set to True to use a socket in a new temporary folder, or a string
-            path to a socket. This overrides port.
-
-            Proxying websockets over a Unix socket requires Tornado >= 6.3.
-
-          mappath
-            Map request paths to proxied paths.
-            Either a dictionary of request paths to proxied paths,
-            or a callable that takes parameter ``path`` and returns the proxied path.
-
-          launcher_entry
-            A dictionary of various options for entries in classic notebook / jupyterlab launchers.
-
-            Keys recognized are:
-
-              enabled
-                Set to True (default) to make an entry in the launchers. Set to False to have no
-                explicit entry.
-
-              icon_path
-                Full path to an svg icon that could be used with a launcher. Currently only used by the
-                JupyterLab launcher
-
-              title
-                Title to be used for the launcher entry. Defaults to the name of the server if missing.
-
-              path_info
-                The trailing path that is appended to the user's server URL to access the proxied server.
-                By default it is the name of the server followed by a trailing slash.
-
-              category
-                The category for the launcher item. Currently only used by the JupyterLab launcher.
-                By default it is "Notebook".
-
-          new_browser_tab
-            Set to True (default) to make the proxied server interface opened as a new browser tab. Set to False
-            to have it open a new JupyterLab tab. This has no effect in classic notebook.
-
-          request_headers_override
-            A dictionary of additional HTTP headers for the proxy request. As with
-            the command traitlet, {{port}}, {{unix_socket}} and {{base_url}} will be substituted.
-
-          rewrite_response
-            An optional function to rewrite the response for the given service.
-            Input is a RewritableResponse object which is an argument that MUST be named
-            ``response``. The function should modify one or more of the attributes
-            ``.body``, ``.headers``, ``.code``, or ``.reason`` of the ``response``
-            argument. For example:
-
-                def dog_to_cat(response):
-                    response.headers["I-Like"] = "tacos"
-                    response.body = response.body.replace(b'dog', b'cat')
-
-                c.ServerProxy.servers['my_server']['rewrite_response'] = dog_to_cat
-
-            The ``rewrite_response`` function can also accept several optional
-            positional arguments. Arguments named ``host``, ``port``, and ``path`` will
-            receive values corresponding to the URL ``/proxy/<host>:<port><path>``. In
-            addition, the original Tornado ``HTTPRequest`` and ``HTTPResponse`` objects
-            are available as arguments named ``request`` and ``orig_response``. (These
-            objects should not be modified.)
-
-            A list or tuple of functions can also be specified for chaining multiple
-            rewrites. For example:
-
-                def cats_only(response, path):
-                    if path.startswith("/cat-club"):
-                        response.code = 403
-                        response.body = b"dogs not allowed"
-
-                c.ServerProxy.servers['my_server']['rewrite_response'] = [dog_to_cat, cats_only]
-
-            Note that if the order is reversed to ``[cats_only, dog_to_cat]``, then accessing
-            ``/cat-club`` will produce a "403 Forbidden" response with body "cats not allowed"
-            instead of "dogs not allowed".
-
-            Defaults to the empty tuple ``tuple()``.
- 
-          update_last_activity
-            Will cause the proxy to report activity back to jupyter server.
-
-          raw_socket_proxy
-            Proxy websocket requests as a raw TCP (or unix socket) stream.
-            In this mode, only websockets are handled, and messages are sent to the backend,
-            similar to running a websockify layer (https://github.com/novnc/websockify).
-            All other HTTP requests return 405 (and thus this will also bypass rewrite_response).
+        Value should be the corresponding configuration for the process.
         """,
         config=True,
     )
