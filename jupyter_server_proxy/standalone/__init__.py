@@ -68,7 +68,7 @@ def run(
     port = port or address_port_default[1]
 
     if skip_authentication:
-        log.warn("Disabling Authentication with JuypterHub Server!")
+        log.warn("Disabling Authentication with JupyterHub Server!")
 
     prefix = os.environ.get("JUPYTERHUB_SERVICE_PREFIX", "/")
 
@@ -142,7 +142,7 @@ def main():
     parser.add_argument(
         "--socket-auto",
         action="store_true",
-        help="Use Unix Socket for proxying, but let Jupyter Server Proxy automatically create one.",
+        help="Use Unix Socket for proxying, but let jupyter-server-proxy automatically create one.",
     )
     parser.add_argument(
         "--env",
