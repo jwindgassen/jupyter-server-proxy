@@ -1,4 +1,4 @@
-from __future__ import annotations  # For Python 3.8 compatibility
+from __future__ import annotations  # Allows type subscripts (like tuple[str, int]) in Python 3.8
 
 import argparse
 import logging
