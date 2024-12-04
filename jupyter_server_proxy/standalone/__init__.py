@@ -95,7 +95,7 @@ def run(
     # Periodically send JupyterHub Notifications, that we are still running
     if activity_interval > 0:
         log.info(
-            f"Sending Acitivity Notivication to JupyterHub with interval={activity_interval}s"
+            f"Sending Activity Notification to JupyterHub with interval={activity_interval}s"
         )
         start_activity_update(activity_interval)
 
